@@ -1,0 +1,51 @@
+# 1. Node Modules:
+# Do not track dependencies installed via npm or yarn.
+node_modules/
+
+# 2. Logs:
+# Ignore log files and any debug logs that may be generated.
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# 3. Environment Variables:
+# Never commit sensitive configuration or API keys.
+.env
+.env.*.local
+.env.*
+staging-env
+prod-env
+# 4. Build Output:
+# Ignore build directories for production/compiled code.
+build/
+dist/
+
+# 5. Caches:
+# Compiled, cached, or temporary directories that you'll recreate in production.
+.cache/
+.next/
+.nuxt/
+.esbuild/
+
+# 6. Temporary Files:
+# Files and directories created temporarily during development.
+tmp/
+temp/
+
+# 7. OS-Specific Files:
+# Files created by operating systems that are not relevant to the project.
+.DS_Store
+Thumbs.db
+
+# 8. Editors & IDEs:
+# Ignore local settings and metadata from common IDEs.
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+staging-env
+prod-env
