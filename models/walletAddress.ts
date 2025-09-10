@@ -21,7 +21,7 @@ interface WalletAttributes {
 interface WalletCreationAttributes extends Optional<WalletAttributes, 'id' | 'uuid' | 'user_type'> {}
 
 module.exports = (sequelize: Sequelize) => {
-  class walletAddresses
+  class wallet_addresses
     extends Model<WalletAttributes, WalletCreationAttributes>
     implements WalletAttributes {
     public id!: number;
@@ -40,7 +40,7 @@ module.exports = (sequelize: Sequelize) => {
     }
   }
 
-  walletAddresses.init(
+  wallet_addresses.init(
     {
       id: {
         type: DataTypes.INTEGER.UNSIGNED,
@@ -69,12 +69,12 @@ module.exports = (sequelize: Sequelize) => {
     },
     {
       sequelize,
-      modelName: 'walletAddresses',
+      modelName: 'wallet_addresses',
       tableName: 'wallet_addresses',
       timestamps: true,
       underscored: true
     }
   );
 
-  return walletAddresses;
+  return wallet_addresses;
 };

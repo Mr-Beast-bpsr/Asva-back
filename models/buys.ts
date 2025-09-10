@@ -11,7 +11,7 @@ interface UsersAttributes {
   quantity: string;
   active: number
   reason: string
-
+  txnHash: string
 }
 
 module.exports = (sequelize: Sequelize, DataTypes: any) => {
@@ -24,6 +24,7 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
     quantity!: string;
     active!: number
     reason!: string
+    txnHash!: string
 
 
     static associate(models: any) {
@@ -44,7 +45,7 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
       quantity: { type: DataTypes.STRING },
       active: { type: DataTypes.INTEGER },
       reason: { type: DataTypes.STRING },
-
+      txnHash: { type: DataTypes.STRING },
     },
     {
       sequelize,

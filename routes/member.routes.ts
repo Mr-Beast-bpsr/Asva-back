@@ -47,6 +47,7 @@ router.post("/get_buy_requests",userController.get_buy_requests)
 
 router.post("/add_wallet_order",userController.add_wallet_order)
 router.post("/get_wallet_balance",userController.get_wallet_balance)
+router.post("/get_wallet_address", userController.get_wallet_address)
 
 router.post("/get_product_by_id",userController.get_product_by_id)
 router.post("/get_product_by_user",userController.get_product_by_user)
@@ -149,6 +150,7 @@ router.post("/all_ipo_data", adminController.totalFreezedAmountIpo);
 
 router.post("/approve_trade",adminController.approve_trade)
 router.post("/reject_trade",adminController.reject_trade)
+router.post("/get_account_number",userController.get_account_number)
 
-
+router.post("/cancel_trade",userController.cancel_trade_order)
 export default router;
