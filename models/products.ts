@@ -41,6 +41,8 @@ interface UsersAttributes {
   amount: string;
   ipoExpDays: string;
   isAutoApprove: boolean
+    creationHash: string;
+
   lotSize?: number; // Optional field for lot size
 
 }
@@ -86,6 +88,7 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
     amount!: string;
     ipoExpDays!: string;
     isAutoApprove!: boolean
+    creationHash!: string;
     static associate(models: any) {
       // Define associations here
     }
@@ -134,6 +137,8 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
       ipoExpDays: { type: DataTypes.STRING },
       isAutoApprove: { type: DataTypes.BOOLEAN, defaultValue: true },
       lotSize: { type: DataTypes.INTEGER },
+      creationHash: { type: DataTypes.STRING },
+      
 
     },
     {

@@ -7,9 +7,11 @@ interface UsersAttributes {
   amount: string;
   action: number;
   item: string;
-  order_id: string
-  receipt: string
-  order_created_at: string
+  order_id: string;
+  receipt: string;
+  order_created_at: string;
+  txnHash: string;
+
 
 }
 
@@ -21,8 +23,9 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
     action!: number;
     item!: string;
     order_id!: string
-    receipt!: string
-    order_created_at!: string
+    receipt!: string;
+    order_created_at!: string;
+    txnHash!: string;
 
     static associate(models: any) {
       // Define associations here
@@ -42,6 +45,7 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
       order_id: { type: DataTypes.STRING },
       receipt: { type: DataTypes.STRING },
       order_created_at: { type: DataTypes.STRING },
+      txnHash: { type: DataTypes.STRING },
 
     },
     {

@@ -12,6 +12,9 @@ import { promisify } from 'util';
 import emailServices from "../../emailServices/emailServices";
 import TradesController from "../TradesController";
 import puppeteer from "puppeteer";
+import { callContractFunction, callTokenContractFunction, fundBuyerAndBuildTokenTransfer } from "../common/web3.controller";
+import { emitKeypressEvents } from "readline";
+import { Contract, ethers } from "ethers";
 
 const unlinkAsync = promisify(fs.unlink);
 
@@ -176,145 +179,179 @@ class codeController {
   async approve_buy_request(payload: any, res: Response) {
     const { userId, id, amount } = payload;
     try {
+      // Validate request
+      if (!id) return commonController.errorMessage("Buy request id is required", res);
+
       // Fetch the buy request data
-      const get_data = await db.buys.findOne({
-        where: {
-          id,
-        },
-      });
-
-      const getUser = await db.users.findOne({
-        where: {
-          id: get_data.userId,
-        },
-      });
-
-      const check_product = await db.products.findOne({
-        where: {
-          id: get_data.product_id,
-        },
-      });
-
-      console.log(get_data, "get_data");
-
-      console.log(check_product, "check_product");
-
-      console.log(parseFloat(check_product.currentQuantity), parseFloat(get_data.quantity));
-
-
-      if (parseFloat(check_product.currentQuantity) < parseFloat(get_data.quantity)) {
-        return commonController.errorMessage("Quantity is greater than ipo quantity", res);
-
-      }
-
+      const get_data = await db.buys.findOne({ where: { id } });
       if (!get_data) {
         return commonController.errorMessage("Buy request not found or invalid Id", res);
       }
 
-      if (parseFloat(amount) > parseFloat(get_data.amount)) {
-        return commonController.errorMessage("Entered Amount is greater than requested amount", res);
-      }
-
-      if (get_data.active == 2) {
+      if (get_data.active === 2) {
         return commonController.errorMessage("Buy request already rejected", res);
       }
-
-      if (get_data.active == 1) {
-        return commonController.errorMessage("Buy request already Accepted", res);
+      if (get_data.active === 1) {
+        return commonController.errorMessage("Buy request already accepted", res);
       }
 
-      // Fetch product data
+      // Fetch product and user
+      const check_product = await db.products.findOne({ where: { id: get_data.product_id } });
+      if (!check_product) {
+        return commonController.errorMessage("Product not found", res);
+      }
 
-      if (parseFloat(check_product.currentQuantity) <= 0) {
+      if (parseFloat(check_product.currentQuantity) <= 0 || check_product.isIpoOver === true) {
         return commonController.errorMessage("IPO ended for this product", res);
       }
 
-      // Calculate previous fee and total deducted amount
-      const previousAmount = parseFloat(get_data.amount);
-      const previousFee = (previousAmount * parseFloat(get_data.fee)) / 100;
-      const totalDeducted = previousAmount + previousFee; // Original amount deducted from user's wallet
-
-      console.log(previousAmount, "previousAmount");
-      console.log(previousFee, "previousFee");
-      console.log(totalDeducted, "totalDeducted");
-
-      // Calculate new fee and amount based on the updated amount
-      const newApprovedAmount = parseFloat(amount);
-      const newFee = (newApprovedAmount * parseFloat(get_data.fee)) / 100;
-      const totalDeductedNew = newApprovedAmount + newFee;
-
-      console.log(newApprovedAmount, "newApprovedAmount");
-      console.log(newFee, "newFee");
-      console.log(totalDeductedNew, "totalDeductedNew");
-
-      // Refund the difference (old deducted amount - new deducted amount)
-      const refundAmount = totalDeducted - totalDeductedNew;
-      console.log(refundAmount, "refundAmount");
-
-      // Find user's wallet and update with the refund
-      const findUserWallet = await db.wallets.findOne({
-        where: {
-          userId: get_data.userId,
-        },
-      });
-
-      findUserWallet.update({
-        amount: parseFloat(findUserWallet.amount) + refundAmount,
-        freezeAmount: parseFloat(findUserWallet.freezeAmount) - totalDeducted
-      });
-
-
-      // Calculate the new supply and update product quantity
-      const newSupplyCal = newApprovedAmount / parseFloat(check_product.initial_price);
-      const newSupply = parseFloat(check_product.currentQuantity) - newSupplyCal;
-
-      // Update the buy request with new approved amount and mark it active
-      await get_data.update({
-        active: 1,
-        approvedAmount: newApprovedAmount,
-        quantity: newSupplyCal
-      });
-
-
-      await check_product.update({
-        currentQuantity: newSupply,
-      });
-
-      // Update user's assets or create a new entry
-      const findUserAssets = await db.user_assets.findOne({
-        where: {
-          userId: get_data.userId,
-          product_id: get_data.product_id,
-        },
-      });
-
-      if (findUserAssets) {
-        await findUserAssets.update({
-          quantity: parseFloat(findUserAssets.quantity) + newSupplyCal,
-        });
-      } else {
-        await db.user_assets.create({
-          userId: get_data.userId,
-          product_id: get_data.product_id,
-          quantity: newSupplyCal,
-          active: 0,
-        });
+      // Ensure expiry not passed (if present)
+      if (check_product.ipoExpiryDate) {
+        const now = new Date();
+        const exp = new Date(check_product.ipoExpiryDate);
+        if (exp < now) {
+          return commonController.errorMessage("IPO has ended", res);
+        }
       }
 
-      // Send the success message
-      const getRecheckReq = await db.buys.findOne({
-        where: {
-          id,
-        },
+      // Determine final approved amount
+      const requestedAmount = parseFloat(get_data.amount);
+      const approvedAmount = amount !== undefined && amount !== null
+        ? parseFloat(amount)
+        : requestedAmount;
+      if (isNaN(approvedAmount) || approvedAmount <= 0) {
+        return commonController.errorMessage("Approved amount must be greater than 0", res);
+      }
+      if (approvedAmount > requestedAmount) {
+        return commonController.errorMessage("Approved amount cannot exceed requested amount", res);
+      }
+
+      // Compute approved token quantity w.r.t product price (must be whole NFTs)
+      const unitPrice = parseFloat(check_product.initial_price);
+      const rawQty = approvedAmount / unitPrice;
+      const qtyToMint = Math.floor(rawQty); // enforce whole units
+      if (qtyToMint <= 0) {
+        return commonController.errorMessage("Approved amount is too low for at least 1 whole token", res);
+      }
+      if (qtyToMint > Math.floor(parseFloat(check_product.currentQuantity))) {
+        return commonController.errorMessage("Approved quantity exceeds available IPO quantity", res);
+      }
+
+      // Wallets and addresses
+      const buyerWallet = await db.wallets.findOne({ where: { userId: get_data.userId } });
+      if (!buyerWallet) {
+        return commonController.errorMessage("Buyer wallet not found", res);
+      }
+      const buyerAddress = await db.wallet_addresses.findOne({ where: { userId: get_data.userId } });
+      if (!buyerAddress) {
+        return commonController.errorMessage("Buyer blockchain address not found", res);
+      }
+
+      const productOwnerWallet = await db.wallets.findOne({ where: { userId: check_product.userId } });
+      if (!productOwnerWallet) {
+        return commonController.errorMessage("Product owner wallet not found", res);
+      }
+
+      // Old freeze and new totals
+      const feePercent = parseFloat(get_data.fee || '0');
+      const oldFee = (requestedAmount * feePercent) / 100;
+      const oldTotal = requestedAmount + oldFee; // frozen earlier
+
+  // Clamp approved amount to whole tokens only
+  const approvedAmountUsed = qtyToMint * unitPrice;
+  const newFee = (approvedAmountUsed * feePercent) / 100;
+  const newTotal = approvedAmountUsed + newFee;
+      const refund = oldTotal - newTotal; // may be 0 or positive
+
+      // Sanity: enough freeze
+      if (parseFloat(buyerWallet.freezeAmount) < oldTotal) {
+        return commonController.errorMessage("Insufficient frozen balance to approve this request", res);
+      }
+
+      // First, mint tokens on-chain. Only proceed with DB updates if successful.
+  const qtyForChainNum = qtyToMint;
+  const mintTx = await callContractFunction("mintToken", [buyerAddress.address, get_data.product_id, qtyForChainNum.toString()]);
+      if (!mintTx || mintTx.status === 0) {
+        return commonController.errorMessage("Blockchain transaction failed while minting tokens", res);
+      }
+
+      // Apply all DB changes in a transaction for atomicity
+      await db.sequelize.transaction(async (t: any) => {
+        // Release full old freeze and add refund to available balance
+        await buyerWallet.update({
+          amount: parseFloat(buyerWallet.amount) + refund,
+          freezeAmount: parseFloat(buyerWallet.freezeAmount) - oldTotal,
+        }, { transaction: t });
+
+        // Credit product owner with approved amount (IPO proceeds)
+        await productOwnerWallet.update({
+          amount: parseFloat(productOwnerWallet.amount) + approvedAmountUsed,
+        }, { transaction: t });
+
+
+        let productOwner =db.wallet_addresses.findOne({
+          where:{
+            userId:check_product.userId
+          }
+        })
+        await fundBuyerAndBuildTokenTransfer(
+           buyerAddress.address,
+           approvedAmountUsed.toString(),
+           check_product.userId,
+           productOwner.address,
+        );
+        await fundBuyerAndBuildTokenTransfer(
+          buyerAddress.address,
+          check_product.userId,
+          newFee.toString(),
+        );
+        // Credit admin wallet with fee only (inside same DB txn)
+        await adminWallet(newFee, t);
+
+        // Reduce product IPO supply
+        await check_product.update({
+          currentQuantity: (parseFloat(check_product.currentQuantity) - qtyToMint).toString(),
+        }, { transaction: t });
+
+        // Update buy request
+        await get_data.update({
+          active: 1,
+          approvedAmount: approvedAmountUsed,
+          quantity: qtyToMint, // store approved whole quantity
+          txnHash: mintTx.txHash
+        }, { transaction: t });
+
+        // Update user assets
+        const findUserAssets = await db.user_assets.findOne({
+          where: { userId: get_data.userId, product_id: get_data.product_id },
+          transaction: t,
+        });
+    if (findUserAssets) {
+          await findUserAssets.update({
+      quantity: parseFloat(findUserAssets.quantity) + qtyToMint,
+          }, { transaction: t });
+        } else {
+          await db.user_assets.create({
+            userId: get_data.userId,
+            product_id: get_data.product_id,
+      quantity: qtyToMint,
+            active: 0,
+          }, { transaction: t });
+        }
       });
 
-      await adminWallet(newFee)
-      const email = await emailServices.ipoApprove(check_product.name, newSupplyCal)
-      commonController.sendEmail(getUser.email, "ITO Approval", email)
+      // Email + response
+      const getUser = await db.users.findOne({ where: { id: get_data.userId } });
+  const email = await emailServices.ipoApprove(check_product.name, qtyToMint);
+      if (getUser) {
+        commonController.sendEmail(getUser.email, "ITO Approval", email);
+      }
 
+      const getRecheckReq = await db.buys.findOne({ where: { id } });
       commonController.successMessage(getRecheckReq, "Buy request approved", res);
 
-      TradesController.clearIpoAfterFinish()
+      // Post-approval: check if IPO finished and clear remainders
+      TradesController.clearIpoAfterFinish();
 
     } catch (e) {
       commonController.errorMessage(`${e}`, res);
@@ -396,6 +433,18 @@ class codeController {
         }
       })
 
+let wallet_address = await db.wallet_addresses.findOne({
+        where: {
+          userId: id
+        }
+      })
+      let amountInWei = ethers.parseUnits(amount.toString(), 18);
+let txn = await callTokenContractFunction("mint", [wallet_address.address, amountInWei])
+
+    if(txn.status = 0){
+          return commonController.errorMessage("Blockchain Transaction failed", res);
+    }
+
       const updated_balance = parseFloat(get_wallet_balance.amount) + parseFloat(amount)
 
       console.log(updated_balance, "updated_balance");
@@ -416,7 +465,8 @@ class codeController {
         order_created_at: null,
         history_type: 2,
         action: 0,
-        item: "none"
+        item: "none",
+        txnHash: txn?.txHash
       })
 
       const wallet_balance = await MyQuery.query(`select w.*, u.email from wallets w left join users u on w.userId = u.id where w.userId = ${id}`, { type: QueryTypes.SELECT })
@@ -443,17 +493,23 @@ class codeController {
 
 
 
+      let wallet:any = await db.wallet_addresses.findOne({
+        where: {
+          userId: get_Product.userId
+        }
+      }
+    )
 
 
+    let txn = await callContractFunction("createToken", [get_Product.quantity, get_Product.currentQuantity,wallet.address,""])
+
+    if(txn.status = 0){
+          return commonController.errorMessage("Blockchain Transaction failed", res);
+    }
 
 
-
-
-
-
-      
       const get_buy = await db.products.update({
-        hidden: 0, approved: 1, ipoExpiryDate
+        hidden: 0, approved: 1, ipoExpiryDate, creationHash: txn.txHash
       }, {
         where: {
           id
@@ -1134,7 +1190,7 @@ order by u.id desc`, { type: QueryTypes.SELECT })
       // Fetch the product details
 
       const check_product = await db.products.findOne({
-        where: { id: product_id },
+        where: { id: product_id, },
       });
 
       // Fetch buyer and seller wallets
@@ -1192,7 +1248,7 @@ order by u.id desc`, { type: QueryTypes.SELECT })
           product_id: product_id,
         },
       });
-
+      
       const previousAllAmountSumBuyArr = await MyQuery.query(
         `SELECT ifnull(sum(amount),0) as amount from buy_trades where userId = ${userIdBuyer} and product_id = ${product_id} and totalQuantity != quantity`, { type: QueryTypes.SELECT }
       );
@@ -1227,24 +1283,25 @@ order by u.id desc`, { type: QueryTypes.SELECT })
 
 
       // Update trade statuses based on quantities
-      if (buyTrade.quantity == 0 && sellTrade.quantity != 0) {
+       if (buyTrade.quantity == 0 && sellTrade.quantity != 0) {
         await buyTrade.update(
-          { active: 1 },
+          { active: 1 ,txnStatus: 1}, // Update buy trade as active and processing
         );
 
       } else if (buyTrade.quantity != 0 && sellTrade.quantity == 0) {
         await sellTrade.update(
-          { active: 1 },
+          { active: 1 ,txnStatus: 1},
         );
 
       } else {
         await buyTrade.update(
-          { active: 1 },
+          { active: 1 ,txnStatus: 1},
         );
         await sellTrade.update(
-          { active: 1 },
+          { active: 1 ,txnStatus: 1},
         );
       }
+
 
       await check_master.update({
         active: 1
@@ -1254,7 +1311,23 @@ order by u.id desc`, { type: QueryTypes.SELECT })
       const emailSell = await emailServices.tradeApprove(check_product.name, sellTrade.quantity, "Sell")
 
       commonController.sendEmail(getBuyer.email, "Trade Approval", emailBuy)
-      commonController.sendEmail(getSeller.email, "Trade Approval", emailSell)
+        commonController.sendEmail(getSeller.email, "Trade Approval", emailSell)
+      let fromAddress = process.env.adminAddress
+        let toAddress = await db.wallet_addresses.findOne({
+          where: {
+            userId: userIdBuyer
+          }
+        })
+    let txn =  await callContractFunction("safeTransferFrom",[fromAddress,toAddress.address,product_id, quantityToTrade,"0x00"])
+     if(txn.status == 0){
+        buyTrade.update({ txnStatus: 3 }) // Mark as failed
+        sellTrade.update({  txnStatus: 3 }) // Mark as
+      }else{
+        buyTrade.update({ txnStatus: 2,hash:txn.txHash }) // Mark as successful
+        sellTrade.update({  txnStatus: 2 ,hash:txn.txHash}) // Mark as successful
+      }
+      // Return success message
+      // commonController.successMessage({}, "Trade approved", res);
 
       // Return success message
       commonController.successMessage({}, "Trade approved", res);
@@ -1386,20 +1459,20 @@ order by u.id desc`, { type: QueryTypes.SELECT })
       // Update trade statuses based on quantities
       if (buyTrade.quantity == 0 && sellTrade.quantity != 0) {
         await buyTrade.update(
-          { active: 1 },
+          { active: 1 ,txnStatus: 1}, // Update buy trade as active and processing
         );
 
       } else if (buyTrade.quantity != 0 && sellTrade.quantity == 0) {
         await sellTrade.update(
-          { active: 1 },
+          { active: 1 ,txnStatus: 1},
         );
 
       } else {
         await buyTrade.update(
-          { active: 1 },
+          { active: 1 ,txnStatus: 1},
         );
         await sellTrade.update(
-          { active: 1 },
+          { active: 1 ,txnStatus: 1},
         );
       }
 
@@ -1410,10 +1483,29 @@ order by u.id desc`, { type: QueryTypes.SELECT })
       const emailBuy = await emailServices.tradeApprove(check_product.name, buyTrade.total_quantityuantity, "Buy")
       const emailSell = await emailServices.tradeApprove(check_product.name, sellTrade.quantity, "Sell")
 
+
+
       commonController.sendEmail(getBuyer.email, "Trade Approval", emailBuy)
       commonController.sendEmail(getSeller.email, "Trade Approval", emailSell)
+      let fromAddress = process.env.adminAddress
+      let toAddress = await db.wallet_addresses.findOne({
+        where: {
+          userId: userIdBuyer
+        }
+      })
+    
+     let txn=  await callContractFunction("safeTransferFrom",[fromAddress,toAddress.address,product_id, quantityToTrade,"0x00"])
+      if(txn.status == 0){
+        buyTrade.update({ txnStatus: 3 }) // Mark as failed
+        sellTrade.update({  txnStatus: 3 }) // Mark as
+      }else{
+        buyTrade.update({ txnStatus: 2,hash:txn.txHash }) // Mark as successful
+        sellTrade.update({  txnStatus: 2 ,hash:txn.txHash}) // Mark as successful
+      }
 
-      // Return success message
+
+    
+     // Return success message
       // commonController.successMessage({}, "Trade approved", res);
 
     } catch (e) {
@@ -1707,7 +1799,7 @@ order by u.id desc`, { type: QueryTypes.SELECT })
       });
 
       // Return the data with total pages
-      commonController.successMessage({ total_pages: 1, get_data }, "All trades data", res);
+      commonController.successMessage( get_data , "All trades data", res);
     } catch (e) {
       // Handle any errors
       commonController.errorMessage(`${e}`, res);
@@ -2302,6 +2394,16 @@ FROM
         return commonController.errorMessage(`Invalid Products request`, res);
       }
 
+      let wallet = await db.wallets.findOne({
+        where: {
+          userId: check.userId
+        }
+      })
+
+      let txn = await callContractFunction("mintToken", [wallet.address,id, check.ipoQuantity])
+      if (txn.status== 0) {
+        return commonController.errorMessage(`Transaction failed`, res);
+      }
       await check.update({
         isIpoOver: 1
       })
@@ -3216,16 +3318,17 @@ async function getFee() {
   return getFee ? getFee : null
 }
 
-async function adminWallet(amount: number) {
+async function adminWallet(amount: number, transaction?: any) {
   const findUserWallet = await db.wallets.findOne({
-    where: {
-      userId: 1
-    },
+    where: { userId: 1 },
+    transaction,
   });
+  if (!findUserWallet) return;
 
-  findUserWallet.update({
-    amount: parseFloat(findUserWallet.amount) + amount,
-  });
+  await findUserWallet.update(
+    { amount: parseFloat(findUserWallet.amount) + amount },
+    { transaction }
+  );
 }
 
 async function generatePDF(html: string) {

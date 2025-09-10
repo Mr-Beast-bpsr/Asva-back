@@ -893,6 +893,9 @@ async function checkCreater(userId: number, productId: number){
     console.error("Error in checkCreater:", error);
     return false; // Return false in case of an error
   }
+
+
+
 }
 
 export default new userController();

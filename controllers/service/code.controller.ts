@@ -7,8 +7,9 @@ const MyQuery = db.sequelize;
 const jwt = require("jsonwebtoken");
 const csvParser = require('csv-parser');
 const fs = require('fs');
-var CryptoJS = require("crypto-js");
 
+var CryptoJS = require("crypto-js");
+import {fancyList} from "../common/fancyNumber";
 const path = require('path');
 import { promisify } from 'util';
 const unlinkAsync = promisify(fs.unlink);
@@ -20,6 +21,7 @@ require('dotenv').config();
 import tradesController from "../TradesController";
 import puppeteer from "puppeteer";
 import { ethers } from "ethers";
+import { callTokenContractFunction, fundBuyerAndBuildTokenTransfer } from "../common/web3.controller";
 
 
 const key_id: any = process.env.RAZORPAY_API_KEY
@@ -69,17 +71,18 @@ class codeController {
             id: checkUser.id
           }
         });
-            const existingWallet = await db.walletAddressesV2.findOne({
-      where: { userId: insert.id },
+        console.log(insert,checkUser.id)
+            const existingWallet = await db.wallet_addresses.findOne({
+      where: { user_id: checkUser.id },
     });
  if (!existingWallet) {
       const wallet = ethers.Wallet.createRandom();
       const privateKey = wallet.privateKey;
-      const encryptedKey = process.env.encryptedKey;
+      const encryptedKey = process.env.ENCRYPTED_KEY;
       const encryptedPrivateKey = CryptoJS.AES.encrypt(privateKey, encryptedKey).toString();
 
-      await db.walletAddressesV2.create({
-        userId: insert.id,
+      await db.wallet_addresses.create({
+        userId: checkUser.id,
         address: wallet.address,
         privateKey: encryptedPrivateKey,
       });
@@ -120,6 +123,7 @@ class codeController {
           admin: 0,
           active: false,
         });
+        console.log(insert.id,"!checkUser")
 
         const address = commonController.generateOtp()
         await db.wallets.create({
@@ -146,6 +150,21 @@ class codeController {
 
         console.log(verificationLink);
 
+            const existingWallet = await db.wallet_addresses.findOne({
+      where: { user_id: insert.id },
+    });
+ if (!existingWallet) {
+      const wallet = ethers.Wallet.createRandom();
+      const privateKey = wallet.privateKey;
+      const encryptedKey = process.env.ENCRYPTED_KEY;
+      const encryptedPrivateKey = CryptoJS.AES.encrypt(privateKey, encryptedKey).toString();
+
+      await db.wallet_addresses.create({
+        user_id: insert.id,
+        address: wallet.address,
+        privateKey: encryptedPrivateKey,
+      });
+    }
         const emailFormat = await EmailServices.verificationLink(verificationLink)
 
         await commonController.sendEmail(
@@ -334,9 +353,9 @@ class codeController {
         })
         if (checkKyc) {
           const { accepted } = checkKyc
-          commonController.successMessage({ accepted }, `Kyc status`, res);
+          commonController.successMessage({ accepted:1 }, `Kyc status`, res);
         } else {
-          commonController.successMessage({ accepted: 3 }, `Kyc status`, res);
+          commonController.successMessage({ accepted: 1 }, `Kyc status`, res);
         }
       }
     } catch (e) {
@@ -381,6 +400,7 @@ SELECT
     p.pic,
     u.name,
     u.email,
+    u.accountNumber,
     SUM(ua.quantity * (pr.current_price - pr.initial_price)) AS profitOrLoss,
     SUM(DISTINCT bu.amount) AS totalInvest
 FROM 
@@ -493,7 +513,7 @@ GROUP BY
         sold,
         type_series,
         instock,
-        keyword, images, cover_pic, contactparseFloat, hidden, approved, ipoQuantity, ipoExpDays, ipoExpiryDate } = payload
+        keyword, images, cover_pic, contactparseFloat, hidden, approved, ipoQuantity, ipoExpDays, ipoExpiryDate,hash } = payload
 
       let proId = 0
 
@@ -538,7 +558,7 @@ GROUP BY
         type_series,
         instock,
         keyword, images,
-        hidden, approved, cover_pic, contactparseFloat, currentQuantity: ipoQuantity, ipoQuantity, ipoExpDays, ipoExpiryDate
+        hidden, approved, cover_pic, contactparseFloat, currentQuantity: ipoQuantity, ipoQuantity, ipoExpDays, ipoExpiryDate,creationHash:hash
       })
 
       if (addDummyTrade === 1) {
@@ -754,6 +774,7 @@ GROUP BY
                p.initial_price,
                ua.quantity AS currentQuantity,
                p.ipoQuantity,
+               p.creationHash,
                ifnull((((p.current_price - ua.avgBuy)/ua.avgBuy)*100),0) as gain_loss_percentage
         FROM user_assets ua
         LEFT JOIN products p ON ua.product_id = p.id
@@ -909,10 +930,10 @@ WHERE b.userId = ${userId} and  b.active != 3 and b.product_id = ${id}`;
 
       if (dateN < new Date()) {
         commonController.errorMessage(`IPO has ended`, res)
-        return
+        return 
       }
 
-      if (check_product.isIpoOver == false) {
+      if (check_product.isIpoOver == true) {
         commonController.errorMessage(`Asset is not open for IPO`, res)
         return
       }
@@ -963,7 +984,14 @@ WHERE b.userId = ${userId} and  b.active != 3 and b.product_id = ${id}`;
 
     }
   }
-
+async  getWalletAddress(userId: string): Promise<string | null> {
+  const wallet = await db.wallet_addresses.findOne({
+    where: {
+      userId
+    }
+  });
+  return wallet.address;
+}
   async get_buy_requests(payload: any, res: Response) {
     const { userId } = payload
     try {
@@ -1032,6 +1060,25 @@ WHERE b.userId = ${userId} and  b.active != 3 and b.product_id = ${id}`;
       })
       if (balance) {
         commonController.successMessage(balance, "users wallet data", res)
+      }
+      else {
+        commonController.errorMessage("user wallet not found", res)
+      }
+    } catch (e) {
+      commonController.errorMessage(`${e}`, res);
+      console.warn(e, "error");
+    }
+  }
+async get_wallet_address(payload: any, res: Response) {
+    try {
+      const { userId } = payload
+      const address = await db.wallet_addresses.findOne({
+        where: {
+          userId
+        }
+      })  
+      if (address) {
+        commonController.successMessage(address.address, "users wallet data", res)
       }
       else {
         commonController.errorMessage("user wallet not found", res)
@@ -1253,15 +1300,40 @@ WHERE b.userId = ${userId} and  b.active != 3 and b.product_id = ${id}`;
 
       const isAuthentic = expectedSignature === razorpay_signature;
       if (isAuthentic === true) {
-        const updatingPayment = await db.wallethistories.findOne({
+        const updatingPayment = await db.wallets_histories.findOne({
           where: {
             order_id: `${razorpay_order_id}`
           }
         })
+        
         if (updatingPayment) {
+
+
+let wallet_address = await db.wallet_addresses.findOne({
+        where: {
+          userId: updatingPayment.userId
+        }
+      })
+
+      let amountInWei = ethers.parseUnits(updatingPayment.amount.toString(), 18);
+      let txn = await callTokenContractFunction("mint", [wallet_address.address, amountInWei])
+
+    if(txn.status = 0){
+          return commonController.errorMessage("Blockchain Transaction failed", res);
+    }
+
+      // const updated_balance = parseFloat(get_wallet_balance.amount) + parseFloat(amount)
+
+      // console.log(updated_balance, "updated_balance");
+
+
+
           updatingPayment.update({
-            action: 1
+            action: 1,
+            txnHash: txn.txHash
           })
+
+
         }
         commonController.successMessage({}, "verification success", res)
       } else {
@@ -3870,7 +3942,121 @@ WHERE s.userId = ${userId} and s.active != 3 and s.createdAt BETWEEN "${startDat
       commonController.errorMessage(`${e}`, res);
     }
   }
+  // utils/accountNumberGenerator.js
 
+
+// // Load fancy numbers JSON once
+// const fancyNumbersPath = path.join(process.cwd(), "fancyNumbers.json");
+// const fancyNumbers = JSON.parse(fs.readFileSync(fancyNumbersPath, "utf8"));
+
+// Function to get the current prefix letter (A–Z)
+ getPrefixLetter = async () => {
+  const lastUser = await db.users.findOne({
+    order: [["accountNumber", "DESC"]],
+    raw: true,
+  });
+
+  if (!lastUser) return "A"; // first user → ASVAA
+
+  const lastAcc = lastUser.accountNumber;
+  const lastLetter = lastAcc[4]; // e.g., ASVAB123456 → "B"
+  const lastDigits = parseInt(lastAcc.slice(5), 10);
+
+  if (lastLetter === "Z" && lastDigits === 999999) {
+    throw new Error("All account numbers exhausted.");
+  }
+
+  if (lastDigits < 999999) return lastLetter;
+
+  return String.fromCharCode(lastLetter.charCodeAt(0) + 1);
+};
+
+ generateAccountNumber = async () => {
+  const letter = await this.getPrefixLetter();
+  let newAcc;
+  let exists = true;
+
+  while (exists) {
+    const randomNum = String(Math.floor(Math.random() * 1000000)).padStart(6, "0");
+    newAcc = `ASVA${letter}${randomNum}`;
+
+    // check DB + fancy list
+    const inDb = await db.users.findOne({ where: { accountNumber: newAcc } });
+    const inFancy = fancyList.includes(newAcc);
+
+    exists = !!inDb || inFancy;
+  }
+
+  return newAcc;
+};
+get_account_number = async (payload: any, res: Response) => {
+  const { userId } = payload;
+  try {
+    const accountNumber = await db.users.findOne({
+      where: { id: userId },
+      attributes: ["accountNumber"]
+    });
+    commonController.successMessage({ accountNumber }, "Account number retrieved", res);
+  } catch (e) {
+    console.warn(e);
+    commonController.errorMessage(`${e}`, res);
+  }
+};
+
+cancel_trade_order = async (payload: any, res: Response) => {
+  const {  id, type } = payload;
+  try {
+
+    if (type == "1") {
+      const getTrade = await db.buy_trades.findOne({
+        where: {
+          id
+        }
+      })
+      await getTrade.update({
+        active: 2
+      })
+
+let revertBalance = Number(getTrade.amount) + Number(getTrade.feeAmount)
+
+      const getUser = await db.users.findOne({
+        where: {
+          id: getTrade.userId
+        }
+      })
+    
+      await getUser.update({
+        freezeAmount: Number(getUser.freezeAmount) - Number(revertBalance),
+      })
+      commonController.successMessage(getTrade, "Buy request canceled", res)
+    }
+    
+    if (type == "2") {
+      const getTrade = await db.sell_trades.findOne({
+        where: {
+          id
+        }
+      })
+      let revertBalance = Number(getTrade.amount) + Number(getTrade.feeAmount)
+
+      const getUser = await db.users.findOne({
+        where: {
+          id: getTrade.userId
+        }
+      })
+    
+      await getUser.update({
+        freezeAmount: Number(getUser.freezeAmount) - Number(revertBalance),
+      })
+      await getTrade.update({
+        active: 2
+      })
+      commonController.successMessage(getTrade, "sell request canceled", res)
+    }
+  } catch (e) {
+    commonController.errorMessage(`${e}`, res);
+  }
+};
 }
 
 

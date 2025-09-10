@@ -4,6 +4,7 @@ import commonController from "./common/common.controller";
 import codeController from "./service/code.controller";
 const fs = require("fs");
 import { checkAdmin, checkAdminNew } from "../middleware/admin";
+import { callContractFunction } from "./common/web3.controller";
 
 // import summary from "../htmls/summary";
 // import event from "./service/event";
@@ -373,6 +374,23 @@ class userController {
         cover_pic_ = `https://api.asvatok.com/${coverFilename}`;
       }
 
+      let wallet = await db.wallet_addresses.findOne(
+        {
+          where: { user_id: userId }
+        } 
+      )
+
+      console.log("allllllfirst")
+      let txn;
+  if(approved==1){   txn = await callContractFunction("createToken", [quantity,quantity-ipoQuantity ,wallet.address,"0x00"])
+
+     console.log(txn)
+
+    if(txn.status = 0){
+          return commonController.errorMessage("Blockchain Transaction failed", res);
+    }
+}
+
       await codeController.add_product({
         userId,
         name,
@@ -400,7 +418,7 @@ class userController {
         keyword,
         hidden, approved,
         images: imageUrls, // Use the processed image URLs
-        cover_pic: cover_pic_, contactNumber, ipoQuantity, addDummyTrade,ipoExpiryDate, ipoExpDays,lotSize
+        cover_pic: cover_pic_, contactNumber, ipoQuantity, addDummyTrade,ipoExpiryDate, ipoExpDays,lotSize,hash:txn?.txHash
       }, res);
     } catch (e) {
       console.warn(e);
@@ -493,6 +511,19 @@ class userController {
     }
   }
 
+
+  async get_wallet_address(req: Request, res: Response) {
+    const userId = (req as any).user?.id;
+    try {
+      await codeController.get_wallet_address(
+        { userId },
+        res
+      );
+    } catch (e) {
+      console.warn(e);
+      commonController.errorMessage(`${e}`, res);
+    }
+  }
 
 
   async get_categories(req: Request, res: Response) {
@@ -1145,6 +1176,40 @@ class userController {
     }
   }
 
+
+
+  async get_account_number(req: Request, res: Response  ) {
+    const userId = (req as any).user?.id;
+    try {
+      const isAdmin = await checkAdmin(userId, res)
+      if (isAdmin) {
+        return isAdmin
+      }
+
+      await codeController.get_account_number(
+        { userId },
+        res
+      );
+    } catch (e) {
+      console.warn(e);
+      commonController.errorMessage(`${e}`, res);
+    }
+  }
+
+
+  async cancel_trade_order(req: Request, res: Response) {
+
+    const { id,type } = req.body;
+    try {
+      await codeController.cancel_trade_order(
+        { id, type },
+        res
+      );
+    } catch (e) {
+      console.warn(e);
+      commonController.errorMessage(`${e}`, res);
+    }
+  }
 }
 
 export default new userController();

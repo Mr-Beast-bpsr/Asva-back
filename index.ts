@@ -12,6 +12,7 @@ import { Encrypt } from "./controllers/common/encryptpassword";
 import cronJobs from "./controllers/TradesController";
 import emailServices from "./emailServices/emailServices";
 import fees_service from "./middleware/fees_service";
+import codeController from "./controllers/service/code.controller";
 
 const cluster = require('node:cluster');
 const numCPUs = require('node:os').availableParallelism();
@@ -45,7 +46,6 @@ app.use("/api-docs", swaggerServe, swaggerSetup);
 
 
 // To get it working for all sources, use this instead:
-
 // Add headers
 app.use(function (req, res, next) {
 
@@ -83,7 +83,7 @@ app.get("/api/v1/welcome", (req, res) => {
   });
 });
 
-app.get('/api/v1/reset-password-form', async (req, res) => {
+app.get('/api/v1/reset-password-form', async (req, res) => {  
   try {
     const token = req.query.token;
 
@@ -270,9 +270,11 @@ app.get('/api/v1/verify', async (req, res: Response) => {
 
     const email = decode.email
 
+    let accountNumber =  await codeController.generateAccountNumber()
     const insert = await db.users.update({
       email,
       active: true,
+      accountNumber
     }, {
       where: {
         email
@@ -280,7 +282,6 @@ app.get('/api/v1/verify', async (req, res: Response) => {
     });
 
     const html = await emailServices.redirectToHome()
-
     return res.status(200).send(html);
   } catch (error) {
     return res.status(400).send(`Internal server error`);

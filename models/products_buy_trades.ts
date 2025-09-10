@@ -9,9 +9,8 @@ interface UsersAttributes {
   amount: string;
   fee: string;
   totalQuantity: string;
-
-  active: number
-
+  active: number;
+  hash: string;
 }
 
 module.exports = (sequelize: Sequelize, DataTypes: any) => {
@@ -23,7 +22,8 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
     fee!: string;
   totalQuantity!: string;
 
-    active!: number
+    active!: number;
+    hash!: string;
 
     static associate(models: any) {
       // Define associations here
@@ -42,7 +42,7 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
       fee: { type: DataTypes.TEXT },
     totalQuantity: { type: DataTypes.TEXT },
       active: { type: DataTypes.INTEGER },
-
+      hash: { type: DataTypes.STRING },
     },
     {
       sequelize,
