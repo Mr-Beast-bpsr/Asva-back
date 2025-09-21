@@ -73,7 +73,7 @@ class codeController {
         });
         console.log(insert,checkUser.id)
             const existingWallet = await db.wallet_addresses.findOne({
-      where: { user_id: checkUser.id },
+      where: { userId: checkUser.id },
     });
  if (!existingWallet) {
       const wallet = ethers.Wallet.createRandom();
@@ -151,7 +151,7 @@ class codeController {
         console.log(verificationLink);
 
             const existingWallet = await db.wallet_addresses.findOne({
-      where: { user_id: insert.id },
+      where: { userId: insert.id },
     });
  if (!existingWallet) {
       const wallet = ethers.Wallet.createRandom();
@@ -160,7 +160,7 @@ class codeController {
       const encryptedPrivateKey = CryptoJS.AES.encrypt(privateKey, encryptedKey).toString();
 
       await db.wallet_addresses.create({
-        user_id: insert.id,
+        userId: insert.id,
         address: wallet.address,
         privateKey: encryptedPrivateKey,
       });
@@ -299,7 +299,22 @@ class codeController {
   }
 
   async kyc(payload: any, res: Response) {
-    const { userId, name, address, parseFloat, id_num, type, a_front, a_back, pan, pan_back, self_pic, sign, passBookPic, bankAccNo } = payload;
+    const {
+      userId,
+      name,
+      address,
+      country,
+      state,
+      city,
+      self_pic,
+      sign,
+      aadhaarNumber,
+      mobile_num,
+      panNumber,
+      ifscCode,
+      accountNumber,
+      accountHolderName,
+    } = payload;
     try {
       const checkUser = await db.users.findOne({
         where: {
@@ -307,29 +322,41 @@ class codeController {
         },
       });
       if (checkUser) {
-        // const checkKyc = await db.kycs.findOne({
-        //   where: {
-        //     userId
-        //   }
-        // })
-        // if (checkKyc) {
-        //   if (checkKyc.rejected == false) {
-        //     if (checkKyc.accepted == false) {
-        //       commonController.errorMessage(`Kyc acceptation is pending `, res);
-        //     } else {
-        //       commonController.errorMessage(`Kyc accepted `, res);
-        //     }
-        //   } else {
-        //     commonController.errorMessage(`Kyc is rejected`, res);
-        //   }
-        // } else {
         const addKyc = await db.kycs.create({
-          userId, name, address, parseFloat, id_num, type, a_front, a_back, pan, pan_back, self_pic, sign, accepted: 0, passBookPic, bankAccNo
-        })
+          userId,
+          name,
+          address,
+          country,
+          state,
+          city,
+          number: mobile_num,
+          id_num: aadhaarNumber,
+          pan: panNumber,
+          self_pic,
+          sign,
+          accepted: 0,
+        });
+
+        // Upsert bank details separately
+        const existingBank = await db.bankdetails.findOne({ where: { userId } });
+        if (existingBank) {
+          await existingBank.update({
+            name: accountHolderName,
+            accountNumber,
+            ifscCode,
+            active: true,
+          });
+        } else {
+          await db.bankdetails.create({
+            userId,
+            name: accountHolderName,
+            accountNumber,
+            ifscCode,
+            active: true,
+          });
+        }
+
         commonController.successMessage(addKyc, "Kyc submission completed", res)
-        //   }
-        // } else {
-        //   commonController.errorMessage(`User not found`, res);
       }
     } catch (e) {
       commonController.errorMessage(`${e}`, res);
@@ -349,13 +376,14 @@ class codeController {
         const checkKyc = await db.kycs.findOne({
           where: {
             userId
-          }
+          },
+          order: [['id', 'DESC']] // Get latest KYC record
         })
         if (checkKyc) {
           const { accepted } = checkKyc
-          commonController.successMessage({ accepted:1 }, `Kyc status`, res);
+          commonController.successMessage({ accepted:accepted }, `Kyc status`, res);
         } else {
-          commonController.successMessage({ accepted: 1 }, `Kyc status`, res);
+          commonController.successMessage({ accepted: 2}, `Kyc status`, res);
         }
       }
     } catch (e) {
@@ -1315,10 +1343,13 @@ let wallet_address = await db.wallet_addresses.findOne({
         }
       })
 
+      if (!wallet_address?.address) {
+        return commonController.errorMessage("Blockchain address not found", res);
+      }
       let amountInWei = ethers.parseUnits(updatingPayment.amount.toString(), 18);
       let txn = await callTokenContractFunction("mint", [wallet_address.address, amountInWei])
 
-    if(txn.status = 0){
+    if(!txn || txn.status == 0){
           return commonController.errorMessage("Blockchain Transaction failed", res);
     }
 
@@ -4057,8 +4088,22 @@ let revertBalance = Number(getTrade.amount) + Number(getTrade.feeAmount)
     commonController.errorMessage(`${e}`, res);
   }
 };
-}
 
+
+ get_kyc_failure_reasons = async (payload: any, res: Response) => {
+  try {
+    const userId = payload.userId;
+    const getReasons = await db.kycs.findOne({
+      where: { userId },
+      order: [['id', 'DESC']]
+    })
+    commonController.successMessage(getReasons, "KYC failure reasons fetched", res)
+  } catch (e) {
+    commonController.errorMessage(`${e}`, res);
+  }
+
+}
+}
 
 async function getFee() {
   const getFee = await db.fees.findOne({

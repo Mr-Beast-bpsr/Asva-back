@@ -270,10 +270,10 @@ class codeController {
 
       // First, mint tokens on-chain. Only proceed with DB updates if successful.
   const qtyForChainNum = qtyToMint;
-  const mintTx = await callContractFunction("mintToken", [buyerAddress.address, get_data.product_id, qtyForChainNum.toString()]);
-      if (!mintTx || mintTx.status === 0) {
-        return commonController.errorMessage("Blockchain transaction failed while minting tokens", res);
-      }
+  // const mintTx = await callContractFunction("mintToken", [buyerAddress.address, get_data.product_id, qtyForChainNum.toString()]);
+  //     if (!mintTx || mintTx.status === 0) {
+  //       return commonController.errorMessage("Blockchain transaction failed while minting tokens", res);
+  //     }
 
       // Apply all DB changes in a transaction for atomicity
       await db.sequelize.transaction(async (t: any) => {
@@ -294,17 +294,19 @@ class codeController {
             userId:check_product.userId
           }
         })
-        await fundBuyerAndBuildTokenTransfer(
-           buyerAddress.address,
-           approvedAmountUsed.toString(),
-           check_product.userId,
-           productOwner.address,
-        );
-        await fundBuyerAndBuildTokenTransfer(
-          buyerAddress.address,
-          check_product.userId,
-          newFee.toString(),
-        );
+
+        
+        // await fundBuyerAndBuildTokenTransfer(
+        //    buyerAddress.address,
+        //    approvedAmountUsed.toString(),
+        //    check_product.userId,
+        //    productOwner.address,
+        // );
+        // await fundBuyerAndBuildTokenTransfer(
+        //   buyerAddress.address,
+        //   check_product.userId,
+        //   newFee.toString(),
+        // );
         // Credit admin wallet with fee only (inside same DB txn)
         await adminWallet(newFee, t);
 
@@ -318,7 +320,7 @@ class codeController {
           active: 1,
           approvedAmount: approvedAmountUsed,
           quantity: qtyToMint, // store approved whole quantity
-          txnHash: mintTx.txHash
+          txnHash: "mintTx.txHash"
         }, { transaction: t });
 
         // Update user assets
@@ -441,8 +443,8 @@ let wallet_address = await db.wallet_addresses.findOne({
       let amountInWei = ethers.parseUnits(amount.toString(), 18);
 let txn = await callTokenContractFunction("mint", [wallet_address.address, amountInWei])
 
-    if(txn.status = 0){
-          return commonController.errorMessage("Blockchain Transaction failed", res);
+    if(!txn || txn.status == 0){
+      return commonController.errorMessage("Blockchain Transaction failed", res);
     }
 
       const updated_balance = parseFloat(get_wallet_balance.amount) + parseFloat(amount)
@@ -501,15 +503,15 @@ let txn = await callTokenContractFunction("mint", [wallet_address.address, amoun
     )
 
 
-    let txn = await callContractFunction("createToken", [get_Product.quantity, get_Product.currentQuantity,wallet.address,""])
+    // let txn = await callContractFunction("createToken", [get_Product.quantity, get_Product.currentQuantity,wallet.address,""])
 
-    if(txn.status = 0){
-          return commonController.errorMessage("Blockchain Transaction failed", res);
-    }
+    // if(txn.status = 0){
+    //       return commonController.errorMessage("Blockchain Transaction failed", res);
+    // }
 
 
       const get_buy = await db.products.update({
-        hidden: 0, approved: 1, ipoExpiryDate, creationHash: txn.txHash
+        hidden: 0, approved: 1, ipoExpiryDate, creationHash:" txn.txHash"
       }, {
         where: {
           id
@@ -580,9 +582,25 @@ let txn = await callTokenContractFunction("mint", [wallet_address.address, amoun
 
       // Base query to fetch KYC records with optional pagination and search
       let fetch_query = `
-        SELECT k.*, u.email 
+        SELECT 
+          k.id,
+          k.userId,
+          k.name,
+          k.address,
+          k.country,
+          k.state,
+          k.city,
+          k.self_pic,
+          k.sign,
+          k.id_num,
+          k.number,
+          k.pan,
+          bd.ifscCode,
+          bd.accountNumber,
+          bd.name AS accountHolderName
         FROM kycs k 
         LEFT JOIN users u ON k.userId = u.id
+        LEFT JOIN bankdetails bd ON bd.userId = k.userId
       `;
 
       // Add search condition to fetch query
@@ -597,7 +615,7 @@ let txn = await callTokenContractFunction("mint", [wallet_address.address, amoun
       fetch_query += ` LIMIT :limit OFFSET :offset`;
 
       // Execute fetch query with parameter replacements
-      const data = await MyQuery.query(fetch_query, {
+      const rows = await MyQuery.query(fetch_query, {
         replacements: {
           search: `%${search}%`,
           limit,
@@ -606,8 +624,24 @@ let txn = await callTokenContractFunction("mint", [wallet_address.address, amoun
         type: QueryTypes.SELECT,
       });
 
+      const data = rows.map((r: any) => ({
+        name: r.name,
+        address: r.address,
+        country: r.country,
+        state: r.state,
+        city: r.city,
+        self_pic: r.self_pic,
+        sign: r.sign,
+        aadhaarNumber: r.id_num,
+        mobile_num: r.number,
+        panNumber: r.pan,
+        ifscCode: r.ifscCode,
+        accountNumber: r.accountNumber,
+        accountHolderName: r.accountHolderName,
+      }));
+
       // Return the data with total pages
-      commonController.successMessage({ data, total_pages }, "Approved asset", res);
+      commonController.successMessage({ data, total_pages }, "KYC records", res);
     } catch (e) {
       // Handle any errors
       commonController.errorMessage(`${e}`, res);
@@ -621,17 +655,46 @@ let txn = await callTokenContractFunction("mint", [wallet_address.address, amoun
 
       // Using parameterized query to avoid SQL injection
       const newData = await MyQuery.query(
-        `SELECT k.*, u.email 
+        `SELECT 
+           k.name,
+           k.address,
+           k.country,
+           k.state,
+           k.city,
+           k.self_pic,
+           k.sign,
+           k.id_num,
+           k.number,
+           k.pan,
+           bd.ifscCode,
+           bd.accountNumber,
+           bd.name AS accountHolderName
          FROM kycs k 
          LEFT JOIN users u ON k.userId = u.id 
+         LEFT JOIN bankdetails bd ON bd.userId = k.userId
          WHERE k.id = :id`,
         { replacements: { id }, type: QueryTypes.SELECT }
       );
 
       // Ensure data exists before proceeding
       if (newData.length > 0) {
-        const data = newData[0];
-        return commonController.successMessage(data, "approved asset", res);
+        const r: any = newData[0];
+        const data = {
+          name: r.name,
+          address: r.address,
+          country: r.country,
+          state: r.state,
+          city: r.city,
+          self_pic: r.self_pic,
+          sign: r.sign,
+          aadhaarNumber: r.id_num,
+          mobile_num: r.number,
+          panNumber: r.pan,
+          ifscCode: r.ifscCode,
+          accountNumber: r.accountNumber,
+          accountHolderName: r.accountHolderName,
+        };
+        return commonController.successMessage(data, "KYC details", res);
       } else {
         return commonController.errorMessage("KYC record not found", res);
       }
@@ -1307,7 +1370,7 @@ order by u.id desc`, { type: QueryTypes.SELECT })
         active: 1
       });
 
-      const emailBuy = await emailServices.tradeApprove(check_product.name, buyTrade.total_quantityuantity, "Buy")
+  const emailBuy = await emailServices.tradeApprove(check_product.name, buyTrade.totalQuantity, "Buy")
       const emailSell = await emailServices.tradeApprove(check_product.name, sellTrade.quantity, "Sell")
 
       commonController.sendEmail(getBuyer.email, "Trade Approval", emailBuy)
@@ -1318,14 +1381,14 @@ order by u.id desc`, { type: QueryTypes.SELECT })
             userId: userIdBuyer
           }
         })
-    let txn =  await callContractFunction("safeTransferFrom",[fromAddress,toAddress.address,product_id, quantityToTrade,"0x00"])
-     if(txn.status == 0){
-        buyTrade.update({ txnStatus: 3 }) // Mark as failed
-        sellTrade.update({  txnStatus: 3 }) // Mark as
-      }else{
-        buyTrade.update({ txnStatus: 2,hash:txn.txHash }) // Mark as successful
-        sellTrade.update({  txnStatus: 2 ,hash:txn.txHash}) // Mark as successful
-      }
+    // let txn =  await callContractFunction("safeTransferFrom",[fromAddress,toAddress.address,product_id, quantityToTrade,"0x00"])
+    //  if(txn.status == 0){
+    //     buyTrade.update({ txnStatus: 3 }) // Mark as failed
+    //     sellTrade.update({  txnStatus: 3 }) // Mark as
+    //   }else{
+    //     buyTrade.update({ txnStatus: 2,hash:txn.txHash }) // Mark as successful
+    //     sellTrade.update({  txnStatus: 2 ,hash:txn.txHash}) // Mark as successful
+    //   }
       // Return success message
       // commonController.successMessage({}, "Trade approved", res);
 
@@ -1480,7 +1543,7 @@ order by u.id desc`, { type: QueryTypes.SELECT })
         active: 1
       });
 
-      const emailBuy = await emailServices.tradeApprove(check_product.name, buyTrade.total_quantityuantity, "Buy")
+  const emailBuy = await emailServices.tradeApprove(check_product.name, buyTrade.totalQuantity, "Buy")
       const emailSell = await emailServices.tradeApprove(check_product.name, sellTrade.quantity, "Sell")
 
 
@@ -1494,14 +1557,14 @@ order by u.id desc`, { type: QueryTypes.SELECT })
         }
       })
     
-     let txn=  await callContractFunction("safeTransferFrom",[fromAddress,toAddress.address,product_id, quantityToTrade,"0x00"])
-      if(txn.status == 0){
-        buyTrade.update({ txnStatus: 3 }) // Mark as failed
-        sellTrade.update({  txnStatus: 3 }) // Mark as
-      }else{
-        buyTrade.update({ txnStatus: 2,hash:txn.txHash }) // Mark as successful
-        sellTrade.update({  txnStatus: 2 ,hash:txn.txHash}) // Mark as successful
-      }
+    //  let txn=  await callContractFunction("safeTransferFrom",[fromAddress,toAddress.address,product_id, quantityToTrade,"0x00"])
+    //   if(txn.status == 0){
+    //     buyTrade.update({ txnStatus: 3 }) // Mark as failed
+    //     sellTrade.update({  txnStatus: 3 }) // Mark as
+    //   }else{
+    //     buyTrade.update({ txnStatus: 2,hash:txn.txHash }) // Mark as successful
+    //     sellTrade.update({  txnStatus: 2 ,hash:txn.txHash}) // Mark as successful
+    //   }
 
 
     
@@ -2400,10 +2463,10 @@ FROM
         }
       })
 
-      let txn = await callContractFunction("mintToken", [wallet.address,id, check.ipoQuantity])
-      if (txn.status== 0) {
-        return commonController.errorMessage(`Transaction failed`, res);
-      }
+      // let txn = await callContractFunction("mintToken", [wallet.address,id, check.ipoQuantity])
+      // if (txn.status== 0) {
+      //   return commonController.errorMessage(`Transaction failed`, res);
+      // }
       await check.update({
         isIpoOver: 1
       })

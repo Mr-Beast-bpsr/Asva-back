@@ -33,6 +33,7 @@ router.use(bodyParser.urlencoded({ limit: '100mb', extended: true }));
 
 router.post("/kyc",userController.kyc);
 router.post("/get_kyc_status",userController.get_kyc_status);
+router.post("/get_kyc_failure_reasons",userController.get_kyc_failure_reasons);
 router.post("/add_profile",userController.add_profile);
 router.post("/edit_profile",userController.edit_profile);
 router.post("/get_profile",userController.get_profile);

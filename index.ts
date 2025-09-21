@@ -13,6 +13,7 @@ import cronJobs from "./controllers/TradesController";
 import emailServices from "./emailServices/emailServices";
 import fees_service from "./middleware/fees_service";
 import codeController from "./controllers/service/code.controller";
+import { kyc_auto_verification } from "./controllers/service/cron_jobs";
 
 const cluster = require('node:cluster');
 const numCPUs = require('node:os').availableParallelism();
@@ -316,6 +317,10 @@ db.sequelize.sync().then(async() => {
     // });
   // await fees_service()
 
+//Cron that runs every minute
+cron.schedule(" */5 * * * *", async()=>{
+    await kyc_auto_verification()
+})
   // } else {
   app.listen(port, async () => {
     // console.log(`App Started on port ${port} and Worker ${process.pid} started`);

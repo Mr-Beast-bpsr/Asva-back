@@ -5,24 +5,12 @@ import codeController from "./service/code.controller";
 const fs = require("fs");
 import { checkAdmin, checkAdminNew } from "../middleware/admin";
 import { callContractFunction } from "./common/web3.controller";
-
-// import summary from "../htmls/summary";
-// import event from "./service/event";
-
 class userController {
   async registration(req: Request, res: Response) {
     const { email, password, confirmPassword, name, mobile } = req.body;
     try {
       if (confirmPassword == password) {
-        await codeController.addUser(
-          {
-            email,
-            password,
-            mobile,
-            name,
-          },
-          res
-        );
+        await codeController.addUser({ email, password, mobile, name }, res);
       } else {
         commonController.errorMessage("confirm password does not match", res);
       }
@@ -44,117 +32,73 @@ class userController {
 
   async kyc(req: Request, res: Response) {
     const userId = (req as any).user.id;
-    const { name, address, number, id_num, type, bankAccNo } = req.body
+    const {
+      name,
+      address,
+      country,
+      state,
+      city,
+      self_pic: _self_pic,
+      sign: _sign,
+      aadhaarNumber,
+      mobile_num,
+      panNumber,
+      ifscCode,
+      accountNumber,
+      accountHolderName,
+    } = req.body;
     try {
-      const _a_front = req.body.a_front;
-      const _a_back = req.body.a_back;
-      const _pan = req.body.pan;
-      const _pan_back = req.body.pan_back;
-      const _self_pic = req.body.self_pic;
-      const _sign = req.body.sign;
-      const _passBookPic = req.body.passBookPic;
-
-
-      // Define an array of objects to validate the presence of each field.
+      
       const fieldsToValidate = [
-        { field: _a_front, message: "Document front pic not found" },
-        { field: _a_back, message: "Document back pic not found" },
-        { field: _pan, message: "PAN document not found" },
-        { field: _pan_back, message: "PAN back document not found" },
+        { field: name, message: "Name not found" },
+        { field: address, message: "Address not found" },
+        { field: country, message: "Country not found" },
+        { field: state, message: "State not found" },
+        { field: city, message: "City not found" },
         { field: _self_pic, message: "Selfie pic not found" },
         { field: _sign, message: "Signature not found" },
-        { field: _passBookPic, message: "Passbook pic not found" },
-        { field: address, message: "Address not found" },
-        { field: number, message: "number not found" },
-        { field: type, message: "Document type not found" },
-        { field: id_num, message: "Id number not found" },
-        { field: name, message: "Name not found" },
-        { field: bankAccNo, message: "Accoung number not found" },
-
+        { field: aadhaarNumber, message: "Aadhaar number not found" },
+        { field: mobile_num, message: "Mobile number not found" },
+        { field: panNumber, message: "PAN number not found" },
+        { field: ifscCode, message: "IFSC Code not found" },
+        { field: accountNumber, message: "Account number not found" },
+        { field: accountHolderName, message: "Account holder name not found" },
       ];
-
-      // Loop through the array and check for missing fields
       for (const { field, message } of fieldsToValidate) {
-        if (!field) {
-          return commonController.errorMessage(message, res);
-        }
+        if (!field) return commonController.errorMessage(message, res);
       }
 
-      // Continue with your logic after validations
-
-      const random_number = commonController.generateOtp()
-
-      let a_front = `kyc/a_front_${userId}_${random_number}.png`;
-      const a_front64Data = _a_front.replace(
-        /^data:([A-Za-z-+/]+);base64,/,
-        ""
-      );
-      fs.writeFileSync(a_front, a_front64Data, {
-        encoding: "base64",
-      });
-      a_front = "https://api.asvatok.com/" + a_front;
-
-      let a_back = `kyc/a_back_${userId}_${random_number}.png`;
-      const a_back64Data = _a_back.replace(
-        /^data:([A-Za-z-+/]+);base64,/,
-        ""
-      );
-      fs.writeFileSync(a_back, a_back64Data, {
-        encoding: "base64",
-      });
-      a_back = "https://api.asvatok.com/" + a_back;
-
-      let pan = `kyc/pan_${userId}_${random_number}.png`;
-      const pan64Data = _pan.replace(
-        /^data:([A-Za-z-+/]+);base64,/,
-        ""
-      );
-      fs.writeFileSync(pan, pan64Data, {
-        encoding: "base64",
-      });
-      pan = "https://api.asvatok.com/" + pan;
-
-      let pan_back = `kyc/pan_back_${userId}_${random_number}.png`;
-      const pan_back64Data = _pan_back.replace(
-        /^data:([A-Za-z-+/]+);base64,/,
-        ""
-      );
-      fs.writeFileSync(pan_back, pan_back64Data, {
-        encoding: "base64",
-      });
-      pan_back = "https://api.asvatok.com/" + pan_back;
+      const random_number = commonController.generateOtp();
 
       let self_pic = `kyc/self_pic_${userId}_${random_number}.png`;
-      const self_pic64Data = _self_pic.replace(
-        /^data:([A-Za-z-+/]+);base64,/,
-        ""
-      );
-      fs.writeFileSync(self_pic, self_pic64Data, {
-        encoding: "base64",
-      });
+      const self_pic64Data = _self_pic.replace(/^data:([A-Za-z-+/]+);base64,?/, "");
+      fs.writeFileSync(self_pic, self_pic64Data, { encoding: "base64" });
       self_pic = "https://api.asvatok.com/" + self_pic;
 
       let sign = `kyc/sign_${userId}_${random_number}.png`;
-      const sign64Data = _sign.replace(
-        /^data:([A-Za-z-+/]+);base64,/,
-        ""
-      );
-      fs.writeFileSync(sign, sign64Data, {
-        encoding: "base64",
-      });
+      const sign64Data = _sign.replace(/^data:([A-Za-z-+/]+);base64,?/, "");
+      fs.writeFileSync(sign, sign64Data, { encoding: "base64" });
       sign = "https://api.asvatok.com/" + sign;
 
-      let passBookPic = `kyc/passBookPic_${userId}_${random_number}.png`;
-      const passBookPic64Data = _passBookPic.replace(
-        /^data:([A-Za-z-+/]+);base64,/,
-        ""
+      await codeController.kyc(
+        {
+          userId,
+          name,
+          address,
+          country,
+          state,
+          city,
+          self_pic,
+          sign,
+          aadhaarNumber,
+          mobile_num,
+          panNumber,
+          ifscCode,
+          accountNumber,
+          accountHolderName,
+        },
+        res
       );
-      fs.writeFileSync(passBookPic, self_pic64Data, {
-        encoding: "base64",
-      });
-      passBookPic = "https://api.asvatok.com/" + passBookPic;
-
-      await codeController.kyc({ userId, name, address, number, id_num, type, a_front, a_back, pan, pan_back, self_pic, sign, passBookPic, bankAccNo }, res);
     } catch (e) {
       console.warn(e);
       commonController.errorMessage(`${e}`, res);
@@ -374,22 +318,18 @@ class userController {
         cover_pic_ = `https://api.asvatok.com/${coverFilename}`;
       }
 
-      let wallet = await db.wallet_addresses.findOne(
-        {
-          where: { user_id: userId }
-        } 
-      )
+      let wallet = await db.wallet_addresses.findOne({ where: { userId } });
 
-      console.log("allllllfirst")
-      let txn;
-  if(approved==1){   txn = await callContractFunction("createToken", [quantity,quantity-ipoQuantity ,wallet.address,"0x00"])
+//       console.log("allllllfirst")
+//       let txn;
+//   if(approved==1){   txn = await callContractFunction("createToken", [quantity,quantity-ipoQuantity ,wallet.address,"0x00"])
 
-     console.log(txn)
+//      console.log(txn)
 
-    if(txn.status = 0){
-          return commonController.errorMessage("Blockchain Transaction failed", res);
-    }
-}
+//     if(txn.status = 0){
+//           return commonController.errorMessage("Blockchain Transaction failed", res);
+//     }
+// }
 
       await codeController.add_product({
         userId,
@@ -418,7 +358,7 @@ class userController {
         keyword,
         hidden, approved,
         images: imageUrls, // Use the processed image URLs
-        cover_pic: cover_pic_, contactNumber, ipoQuantity, addDummyTrade,ipoExpiryDate, ipoExpDays,lotSize,hash:txn?.txHash
+        cover_pic: cover_pic_, contactNumber, ipoQuantity, addDummyTrade,ipoExpiryDate, ipoExpDays,lotSize,hash:""
       }, res);
     } catch (e) {
       console.warn(e);
@@ -1203,6 +1143,19 @@ class userController {
     try {
       await codeController.cancel_trade_order(
         { id, type },
+        res
+      );
+    } catch (e) {
+      console.warn(e);
+      commonController.errorMessage(`${e}`, res);
+    }
+  }
+
+  async get_kyc_failure_reasons(req: Request, res: Response) {
+    const userId = (req as any).user?.id;
+    try {
+      await codeController.get_kyc_failure_reasons(
+        { userId },
         res
       );
     } catch (e) {

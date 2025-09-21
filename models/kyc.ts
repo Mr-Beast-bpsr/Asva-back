@@ -4,20 +4,23 @@ import { DateDataType, Model, Sequelize } from "sequelize";
 interface UsersAttributes {
   userId: number;
   name: string;
-  number: string;
+  number: string; // mobile number
   address: string;
-  id_num: string;
-  type: string;
-  a_front: string;
-  a_back: string;
-  pan: string;
-  pan_back: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  id_num: string; // aadhaarNumber
+  type?: string;
+  a_front?: string;
+  a_back?: string;
+  pan: string; // panNumber
+  pan_back?: string;
   self_pic: string;
   sign: string;
   accepted: number;
   reason: string;
-  bankAccNo: string;
-  passBookPic: string;
+  bankAccNo?: string;
+  passBookPic?: string;
   
 }
 
@@ -27,18 +30,21 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
     name!: string;
     number!: string;
     address!: string;
+    country?: string;
+    state?: string;
+    city?: string;
     id_num!: string;
-    type!: string;
-    a_front!: string;
-    a_back!: string;
+    type?: string;
+    a_front?: string;
+    a_back?: string;
     pan!: string;
-    pan_back!: string;
+    pan_back?: string;
     self_pic!: string;
     sign!: string;
     accepted!: number;
     reason!: string;
-    bankAccNo!: string;
-  passBookPic!: string;
+    bankAccNo?: string;
+    passBookPic?: string;
 
     static associate(models: any) {
       // Define associations here
@@ -54,6 +60,9 @@ module.exports = (sequelize: Sequelize, DataTypes: any) => {
       name: { type: DataTypes.STRING },
       number: { type: DataTypes.STRING },
       address: { type: DataTypes.STRING },
+      country: { type: DataTypes.STRING },
+      state: { type: DataTypes.STRING },
+      city: { type: DataTypes.STRING },
       id_num: { type: DataTypes.STRING },
       type: { type: DataTypes.STRING },
       a_front: { type: DataTypes.STRING },
